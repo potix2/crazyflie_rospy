@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+    <group ns="crazyflie">
+        <include file="$(find crazyflie_rospy)/launch/crazyflie_server.launch">
+        </include>
+        <include file="$(find crazyflie_rospy)/launch/crazyflie_add.launch">
+            <arg name="uri" default="radio://0/80/250K" />
+            <arg name="tf_prefix" default="crazyflie" />
+        </include>
+    </group>
+</launch>
