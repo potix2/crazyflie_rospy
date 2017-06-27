@@ -2,6 +2,7 @@
 
 import threading
 import sys
+import time
 import rospy
 from crazyflie_rospy.srv import AddCrazyflie, AddCrazyflieRequest, AddCrazyflieResponse
 from geometry_msgs.msg import Twist
@@ -45,7 +46,7 @@ class CrazyflieROS(object):
         self.enable_logging_battery = enable_logging_battery
         self.height_hold = height_hold
 
-        self.send_setpoint = False
+        self.sent_setpoint = False
         self.target_height = INITIAL_TARGET_HEIGHT
 
         rospy.Subscriber(self.tf_prefix + '/cmd_vel', Twist, self.cmd_vel_changed)
@@ -60,7 +61,7 @@ class CrazyflieROS(object):
             if not self.height_hold:
                 thrust = min(max(msg.linear.z, 0.0), 60000)
                 self.cf.send_setpoint(roll, pitch, yawrate, thrust)
-                self.send_setpoint = true
+                self.sent_setpoint = True
             else:
                 vz = (msg.linear.z - 32767) / 32767.0
                 self.target_height += vz * INPUT_READ_PERIOD
@@ -68,7 +69,30 @@ class CrazyflieROS(object):
                 self.cf.send_zdistance_setpoint(roll, pitch, yawrate, self.target_height)
 
     def run(self):
-        pass
+        # auto start = std::chrono::system_clock::now();
+        if self.enable_parameters:
+            # skip update parameters
+            pass
+
+        if self.enable_logging:
+            # skip logging
+            pass
+
+        rospy.info("Ready...");
+
+        # Send 0 thrust initially for thrust-lock
+        for i in range(100):
+            self.cf.send_setpoint(0, 0, 0, 0)
+
+        while not self.is_emergency:
+            # make sure we ping often enough to stream data out
+            self.sent_setpoint = False
+            time.sleep(0.001)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+        # Make sure we turn the engines off
+        for i in range(100):
+            self.cf.send_setpoint(0, 0, 0, 0)
 
 
 def add_crazyflie(req):
