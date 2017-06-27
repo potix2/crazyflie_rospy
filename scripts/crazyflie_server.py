@@ -7,6 +7,7 @@ import rospy
 from crazyflie_rospy.srv import AddCrazyflie, AddCrazyflieRequest, AddCrazyflieResponse
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String, Bool
+from std_srvs.srv import Empty, EmptyResponse
 
 
 class CrazyflieROS(object):
@@ -47,10 +48,14 @@ class CrazyflieROS(object):
         self.height_hold = height_hold
 
         self.sent_setpoint = False
-        self.target_height = INITIAL_TARGET_HEIGHT
+        self.target_height = self.INITIAL_TARGET_HEIGHT
 
         rospy.Subscriber(self.tf_prefix + '/cmd_vel', Twist, self.cmd_vel_changed)
-        rospy.ServiceProxy(self.tf_prefix + '/emergency', Bool, self.emergency)
+        rospy.Service(self.tf_prefix + '/emergency', Empty, self.emergency)
+
+    def emergency(self):
+        self.is_emergency = True
+        return EmptyResponse
 
     def cmd_vel_changed(self, msg):
         if not self.is_emergency:
@@ -64,8 +69,8 @@ class CrazyflieROS(object):
                 self.sent_setpoint = True
             else:
                 vz = (msg.linear.z - 32767) / 32767.0
-                self.target_height += vz * INPUT_READ_PERIOD
-                self.target_height = min(max(self.target_height, MIN_TARGET_HEIGHT), MAX_TARGET_HEIGHT)
+                self.target_height += vz * self.INPUT_READ_PERIOD
+                self.target_height = min(max(self.target_height, self.MIN_TARGET_HEIGHT), self.MAX_TARGET_HEIGHT)
                 self.cf.send_zdistance_setpoint(roll, pitch, yawrate, self.target_height)
 
     def run(self):
@@ -78,7 +83,7 @@ class CrazyflieROS(object):
             # skip logging
             pass
 
-        rospy.info("Ready...");
+        rospy.loginfo("Ready...");
 
         # Send 0 thrust initially for thrust-lock
         for i in range(100):
@@ -88,7 +93,6 @@ class CrazyflieROS(object):
             # make sure we ping often enough to stream data out
             self.sent_setpoint = False
             time.sleep(0.001)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
         # Make sure we turn the engines off
         for i in range(100):
@@ -96,6 +100,7 @@ class CrazyflieROS(object):
 
 
 def add_crazyflie(req):
+    rospy.loginfo('crazyflie_server: add_crazyflie(uri={})'.format(req.uri))
     cf = CrazyflieROS(
             req.uri,
             req.tf_prefix,
@@ -116,8 +121,8 @@ def add_crazyflie(req):
 
 def main(args):
     rospy.init_node('crazyflie_server')
-    rospy.wait_for_service('add_crazyflie')
     s = rospy.Service('add_crazyflie', AddCrazyflie, add_crazyflie)
+    rospy.loginfo('ready to add crazyflie!')
     rospy.spin()
 
 
