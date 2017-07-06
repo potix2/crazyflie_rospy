@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 
-import threading
+from threading import Thread
 import sys
 import time
 import rospy
+
 from crazyflie_rospy.srv import AddCrazyflie, AddCrazyflieRequest, AddCrazyflieResponse
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String, Bool
 from std_srvs.srv import Empty, EmptyResponse
+
+import cflib
+from cflib.crazyflie import Crazyflie
 
 
 class CrazyflieROS(object):
@@ -32,7 +36,7 @@ class CrazyflieROS(object):
             enable_logging_battery,
             height_hold):
 
-        self.link_url = link_url
+        self.link_url = str(link_url)
         self.tf_prefix = tf_prefix
         self.roll_trim = roll_trim
         self.pitch_trim = pitch_trim
@@ -49,13 +53,36 @@ class CrazyflieROS(object):
 
         self.sent_setpoint = False
         self.target_height = self.INITIAL_TARGET_HEIGHT
+        self.is_emergency = False
 
         rospy.Subscriber(self.tf_prefix + '/cmd_vel', Twist, self.cmd_vel_changed)
         rospy.Service(self.tf_prefix + '/emergency', Empty, self.emergency)
 
-    def emergency(self):
+        self.cf = Crazyflie()
+        self.cf.connected.add_callback(self._connected)
+        self.cf.disconnected.add_callback(self._disconnected)
+        self.cf.connection_failed.add_callback(self._connection_failed)
+        self.cf.connection_lost.add_callback(self._connection_lost)
+        self.cf.open_link(str(link_url))
+        rospy.loginfo('Connecting to {} (len={})'.format(link_url, len(link_url)))
+
+
+    def _connected(self, link_url):
+        rospy.loginfo('Connected from: {}'.format(link_url))
+        Thread(target=self.run).start()
+
+    def _disconnected(self, link_url):
+        rospy.loginfo('Disconnected from: {}'.format(link_url))
+
+    def _connection_failed(self, link_url, msg):
+        rospy.logerr('Connection to {} failed: {}'.format(link_url, msg))
+
+    def _connection_lost(self, link_url, msg):
+        rospy.logerr('Connection to {} lost: {}'.format(link_url, msg))
+
+    def emergency(self, req):
         self.is_emergency = True
-        return EmptyResponse
+        return EmptyResponse()
 
     def cmd_vel_changed(self, msg):
         if not self.is_emergency:
@@ -65,13 +92,13 @@ class CrazyflieROS(object):
 
             if not self.height_hold:
                 thrust = min(max(msg.linear.z, 0.0), 60000)
-                self.cf.send_setpoint(roll, pitch, yawrate, thrust)
+                self.cf.commander.send_setpoint(roll, pitch, yawrate, thrust)
                 self.sent_setpoint = True
             else:
                 vz = (msg.linear.z - 32767) / 32767.0
                 self.target_height += vz * self.INPUT_READ_PERIOD
                 self.target_height = min(max(self.target_height, self.MIN_TARGET_HEIGHT), self.MAX_TARGET_HEIGHT)
-                self.cf.send_zdistance_setpoint(roll, pitch, yawrate, self.target_height)
+                self.cf.commander.send_zdistance_setpoint(roll, pitch, yawrate, self.target_height)
 
     def run(self):
         # auto start = std::chrono::system_clock::now();
@@ -87,7 +114,7 @@ class CrazyflieROS(object):
 
         # Send 0 thrust initially for thrust-lock
         for i in range(100):
-            self.cf.send_setpoint(0, 0, 0, 0)
+            self.cf.commander.send_setpoint(0, 0, 0, 0)
 
         while not self.is_emergency:
             # make sure we ping often enough to stream data out
@@ -96,7 +123,9 @@ class CrazyflieROS(object):
 
         # Make sure we turn the engines off
         for i in range(100):
-            self.cf.send_setpoint(0, 0, 0, 0)
+            self.cf.commander.send_setpoint(0, 0, 0, 0)
+
+        self.cf.close_link()
 
 
 def add_crazyflie(req):
@@ -120,8 +149,9 @@ def add_crazyflie(req):
 
 
 def main(args):
+    cflib.crtp.init_drivers(enable_debug_driver=False)
     rospy.init_node('crazyflie_server')
-    s = rospy.Service('add_crazyflie', AddCrazyflie, add_crazyflie)
+    s = rospy.Service('/add_crazyflie', AddCrazyflie, add_crazyflie)
     rospy.loginfo('ready to add crazyflie!')
     rospy.spin()
 

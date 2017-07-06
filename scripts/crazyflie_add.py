@@ -21,10 +21,11 @@ def main(args):
     enable_logging_battery = rospy.get_param("~enable_logging_battery", True)
     height_hold = rospy.get_param("~height_hold", False)
 
-    rospy.loginfo("wait_for_service add_crazyflie")
-    # rospy.wait_for_service('add_crazyflie')
+    rospy.loginfo("wait_for_service add_crazyflie...")
+    rospy.wait_for_service('/add_crazyflie')
+    rospy.loginfo("done")
     try:
-        add_crazyflie = rospy.ServiceProxy('add_crazyflie', AddCrazyflie)
+        add_crazyflie = rospy.ServiceProxy('/add_crazyflie', AddCrazyflie)
         req = AddCrazyflieRequest(
             uri,
             tf_prefix,
